@@ -1,0 +1,1400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FULL TILT — Joust at Speed</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#87c5eb; font-family: Georgia, 'Times New Roman', serif; }
+  canvas#game { display:block; }
+  .hud { position:absolute; pointer-events:none; user-select:none; }
+
+  /* ---- top bar: position / lap ---- */
+  #topbar { top:14px; left:50%; transform:translateX(-50%); display:flex; gap:14px; align-items:center; }
+  .plate {
+    background:linear-gradient(#20386b,#16264a); border:2px solid #d9a92c; border-radius:8px;
+    color:#fff; padding:6px 16px; text-align:center; box-shadow:0 3px 8px rgba(0,0,0,.35);
+  }
+  #posPlate .big { font-size:30px; font-weight:bold; color:#ffd75e; line-height:1; }
+  #posPlate .small { font-size:11px; letter-spacing:2px; color:#bcd0f5; }
+  #lapPlate .big { font-size:22px; font-weight:bold; line-height:1.2; }
+  #lapPlate .small { font-size:11px; letter-spacing:2px; color:#bcd0f5; }
+
+  /* ---- bottom left: health / stamina / gear ---- */
+  #vitals { left:18px; bottom:18px; width:270px; }
+  .barlabel { color:#fff; font-size:11px; letter-spacing:2px; text-shadow:0 1px 3px #000; margin-bottom:2px; }
+  .barouter { height:16px; background:rgba(10,16,30,.72); border:2px solid #d9a92c; border-radius:8px; overflow:hidden; margin-bottom:7px; }
+  .barinner { height:100%; border-radius:5px; transition:width .12s ease-out; }
+  #hpBar { background:linear-gradient(#ff7a6b,#d9302c); width:100%; }
+  #stBar { background:linear-gradient(#ffe98a,#e6b422); width:100%; }
+  #gearRow { display:flex; gap:6px; margin-top:2px; align-items:center; }
+  .gearpip { width:34px; height:12px; border:2px solid #d9a92c; border-radius:4px; background:rgba(10,16,30,.6); }
+  .gearpip.on { background:linear-gradient(#9ff08a,#3fae4a); box-shadow:0 0 8px #7dff6a; }
+  #gearText { color:#fff; font-size:12px; margin-left:6px; text-shadow:0 1px 3px #000; }
+  #boostFlash { color:#ffd75e; font-size:14px; font-weight:bold; text-shadow:0 0 8px #ff9d00; opacity:0; margin-top:4px; }
+
+  /* ---- bottom right: lance zone hints ---- */
+  #lanceHud { right:18px; bottom:18px; text-align:right; }
+  .zoneKey {
+    display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:5px;
+    color:#fff; font-size:14px; text-shadow:0 1px 3px #000; opacity:.35; transition:opacity .15s;
+  }
+  .zoneKey.ready { opacity:1; }
+  .zoneKey.beats { color:#ffd75e; }
+  .zoneKey .kcap {
+    display:inline-block; width:26px; height:26px; line-height:22px; text-align:center;
+    background:linear-gradient(#20386b,#16264a); border:2px solid #d9a92c; border-radius:6px; font-weight:bold;
+  }
+  #defHint { color:#bcd0f5; font-size:11px; margin-top:8px; text-shadow:0 1px 3px #000; }
+
+  /* ---- feed ---- */
+  #feed { left:18px; top:14px; width:340px; }
+  .feedmsg { color:#fff; font-size:13px; text-shadow:0 1px 3px #000; margin-bottom:4px;
+    background:rgba(10,16,30,.45); border-left:3px solid #d9a92c; padding:3px 8px; border-radius:3px;
+    animation:feedin .25s ease-out; }
+  @keyframes feedin { from { transform:translateX(-16px); opacity:0; } to { transform:none; opacity:1; } }
+
+  /* ---- minimap ---- */
+  #minimapWrap { right:14px; top:14px; background:rgba(10,16,30,.55); border:2px solid #d9a92c; border-radius:8px; padding:4px; }
+  #minimap { display:block; }
+
+  /* ---- center messages ---- */
+  #centerMsg { top:26%; left:50%; transform:translate(-50%,-50%); text-align:center;
+    font-size:84px; font-weight:bold; color:#ffd75e; text-shadow:0 4px 0 #8a5a00, 0 8px 22px rgba(0,0,0,.5); display:none; }
+  #subMsg { top:36%; left:50%; transform:translate(-50%,-50%); font-size:22px; color:#fff; text-shadow:0 2px 6px #000; display:none; }
+
+  /* ---- floating labels over riders ---- */
+  .engTag { position:absolute; transform:translate(-50%,-100%); text-align:center; pointer-events:none;
+    color:#fff; text-shadow:0 1px 3px #000; display:none; }
+  .engTag .gname { font-size:11px; background:rgba(10,16,30,.6); padding:1px 7px; border-radius:8px; }
+  .engTag .gicon { font-size:22px; line-height:1.1; }
+  .engTag .tele { color:#ff5b4d; font-size:24px; font-weight:bold; display:none; }
+  .dmgpop { position:absolute; transform:translate(-50%,-50%); font-weight:bold; pointer-events:none;
+    text-shadow:0 2px 4px #000; transition:transform 1s ease-out, opacity 1s; }
+
+  /* ---- title / results overlays ---- */
+  .overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(8,14,30,.55); pointer-events:none; }
+  .scroll {
+    background:linear-gradient(#fdf3d7,#f3e2b3); border:4px solid #b07d1f; border-radius:14px;
+    padding:34px 52px; text-align:center; color:#3a2c10; box-shadow:0 14px 50px rgba(0,0,0,.55);
+  }
+  .scroll h1 { font-size:58px; letter-spacing:3px; color:#7a1f1f; text-shadow:0 2px 0 #e8c86f; }
+  .scroll h2 { font-size:34px; color:#7a1f1f; }
+  .scroll .tag { font-style:italic; color:#6b551f; margin:4px 0 16px; }
+  .scroll table { margin:0 auto 14px; border-collapse:collapse; font-size:15px; }
+  .scroll td { padding:3px 12px; text-align:left; }
+  .scroll td.k { text-align:right; font-weight:bold; color:#5a3d10; }
+  .scroll .go { font-size:19px; color:#1c4d1c; font-weight:bold; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+  .controls { font-size:14px; line-height:1.75; text-align:left; display:inline-block; margin-bottom:14px; }
+  .controls b { color:#7a1f1f; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div class="hud" id="topbar" style="display:none">
+  <div class="plate" id="posPlate"><div class="big" id="posText">6th</div><div class="small">PLACE</div></div>
+  <div class="plate" id="lapPlate"><div class="big" id="lapText">LAP 1/3</div><div class="small" id="timeText">0:00.0</div></div>
+</div>
+
+<div class="hud" id="vitals" style="display:none">
+  <div class="barlabel">HEALTH</div>
+  <div class="barouter"><div class="barinner" id="hpBar"></div></div>
+  <div class="barlabel">STAMINA</div>
+  <div class="barouter"><div class="barinner" id="stBar"></div></div>
+  <div id="gearRow">
+    <div class="gearpip" id="g1"></div><div class="gearpip" id="g2"></div>
+    <div class="gearpip" id="g3"></div><div class="gearpip" id="g4"></div>
+    <span id="gearText">GEAR 1</span>
+  </div>
+  <div id="boostFlash">FULL TILT!</div>
+</div>
+
+<div class="hud" id="lanceHud" style="display:none">
+  <div class="zoneKey" id="zHigh"><span>HIGH — helm</span><span class="kcap">I</span></div>
+  <div class="zoneKey" id="zMid"><span>MID — shield</span><span class="kcap">O</span></div>
+  <div class="zoneKey" id="zLow"><span>LOW — mount</span><span class="kcap">P</span></div>
+  <div id="defHint">SPACE shield-block mid &nbsp;·&nbsp; S duck high &nbsp;·&nbsp; drift weaves low</div>
+</div>
+
+<div class="hud" id="feed"></div>
+
+<div class="hud" id="minimapWrap"><canvas id="minimap" width="210" height="130"></canvas></div>
+
+<div class="hud" id="centerMsg"></div>
+<div class="hud" id="subMsg"></div>
+
+<div class="overlay" id="titleOverlay">
+  <div class="scroll">
+    <h1>FULL TILT</h1>
+    <div class="tag">A tourney of speed and splinters — 3 laps, 5 rivals, 1 tilt lane</div>
+    <div class="controls">
+      <b>W / S</b> gallop / brake+duck &nbsp;&nbsp; <b>A / D</b> steer<br>
+      <b>SHIFT</b> hold to drift — release a long slide for a burst of speed<br>
+      <b>I / O / P</b> lance strike HIGH / MID / LOW (costs stamina)<br>
+      <b>SPACE</b> raise shield (blocks MID) &nbsp;·&nbsp; <b>S</b> duck (evades HIGH) &nbsp;·&nbsp; drifting weaves LOW<br>
+      <b>M</b> mute &nbsp;·&nbsp; <b>R</b> restart
+    </div>
+    <div style="font-size:13px;color:#6b551f;margin-bottom:14px">
+      Read their guard: 🛡️ shield blocks MID &nbsp;·&nbsp; ⬇️ duck evades HIGH &nbsp;·&nbsp; 〰️ weave evades LOW.<br>
+      Strike the zone they leave open. Damage scales with closing speed — the head-on tilt lane hits hardest.
+    </div>
+    <div class="go">PRESS ENTER TO RIDE</div>
+  </div>
+</div>
+
+<div class="overlay" id="resultsOverlay" style="display:none">
+  <div class="scroll">
+    <h2 id="resTitle">2nd Place!</h2>
+    <div class="tag" id="resTag">The crowd roars for the Emerald Knight</div>
+    <table id="resTable"></table>
+    <div class="go">PRESS R FOR ANOTHER TILT</div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   FULL TILT — 3D horse-racing joust-brawler
+   Pillars: race-to-win · kart chase cam · bright tourney festival
+   three-key lance zones · big committed drifts · kart-hit unhorse
+   dogbone circuit w/ head-on tilt lane · bloodthirsty AI
+   ============================================================ */
+
+// ---------------- renderer / scene ----------------
+const canvas = document.getElementById('game');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8ecdf0);
+scene.fog = new THREE.Fog(0x9ed4f2, 180, 560);
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 900);
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x6fae5a, 0.95); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff2d8, 1.25); sun.position.set(120, 200, 60); scene.add(sun);
+
+const mat = (c, opts={}) => new THREE.MeshLambertMaterial({ color:c, ...opts });
+const box = (w,h,d,c) => new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat(c));
+
+// ---------------- track spline ----------------
+const CP = [
+  [-60,-5],[0,-5],[60,-5],                                   // waist A — eastbound (tilt lane south)
+  [105,-14],[142,6],[136,52],[97,74],[70,32],                // east lobe
+  [60,5],[0,5],[-60,5],                                      // waist B — westbound (tilt lane north)
+  [-70,32],[-97,74],[-136,52],[-142,6],[-105,-14],           // west lobe
+];
+const curve = new THREE.CatmullRomCurve3(CP.map(p => new THREE.Vector3(p[0], 0, p[1])), true, 'catmullrom', 0.5);
+
+const NS = 1500; // physics samples
+const S = { pos:[], tan:[], dist:[], total:0 };
+{
+  const pts = curve.getSpacedPoints(NS);
+  let d = 0;
+  for (let i=0;i<NS;i++){
+    const p = pts[i];
+    const q = pts[(i+1)%NS];
+    S.pos.push(p);
+    S.tan.push(q.clone().sub(p).setY(0).normalize());
+    S.dist.push(d);
+    d += p.distanceTo(q);
+  }
+  S.total = d;
+}
+const HALF_W = 4.6;               // lane half-width
+const wrap = i => ((i % NS) + NS) % NS;
+
+function nearestSample(pos, hint) {
+  let best = -1, bd = Infinity;
+  if (hint >= 0) {
+    for (let o=-40;o<=40;o++){
+      const i = wrap(hint+o);
+      const dd = pos.distanceToSquared(S.pos[i]);
+      if (dd < bd){ bd = dd; best = i; }
+    }
+    if (bd < 400) return best;
+  }
+  for (let i=0;i<NS;i+=4){
+    const dd = pos.distanceToSquared(S.pos[i]);
+    if (dd < bd){ bd = dd; best = i; }
+  }
+  return best;
+}
+function curvatureAhead(i, look=70){
+  const a = S.tan[wrap(i)], b = S.tan[wrap(i+look)];
+  return Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1));
+}
+
+// ---------------- track meshes ----------------
+{
+  // ground
+  const gcv = document.createElement('canvas'); gcv.width = gcv.height = 256;
+  const g = gcv.getContext('2d');
+  g.fillStyle = '#69b054'; g.fillRect(0,0,256,256);
+  for (let i=0;i<900;i++){
+    g.fillStyle = `rgba(${80+Math.random()*40|0},${150+Math.random()*50|0},${60+Math.random()*30|0},.25)`;
+    g.fillRect(Math.random()*256, Math.random()*256, 3+Math.random()*6, 3+Math.random()*6);
+  }
+  const gtex = new THREE.CanvasTexture(gcv);
+  gtex.wrapS = gtex.wrapT = THREE.RepeatWrapping; gtex.repeat.set(24,18);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 700), new THREE.MeshLambertMaterial({ map:gtex }));
+  ground.rotation.x = -Math.PI/2; ground.position.y = -0.05; ground.position.z = 25; scene.add(ground);
+
+  // road ribbon (vertex-colored dirt)
+  const M = 700, posA = [], colA = [], idxA = [];
+  const cCenter = new THREE.Color(0xc9a06a), cEdge = new THREE.Color(0x9d7a4b);
+  for (let i=0;i<=M;i++){
+    const s = wrap(Math.round(i/M*NS));
+    const p = S.pos[s], t = S.tan[s];
+    const left = new THREE.Vector3(-t.z, 0, t.x);
+    const shade = 0.94 + 0.06*Math.sin(i*1.7);
+    for (const side of [-1, 1]){
+      const v = p.clone().addScaledVector(left, side*HALF_W);
+      posA.push(v.x, 0.02, v.z);
+      const c = cEdge.clone().lerp(cCenter, 0.35).multiplyScalar(shade);
+      colA.push(c.r, c.g, c.b);
+    }
+    // overwrite: edge darker, keep it simple — recolor the two verts
+    const ce = cEdge.clone().multiplyScalar(shade), cc = cCenter.clone().multiplyScalar(shade);
+    colA.splice(colA.length-6, 6, ce.r, ce.g, ce.b, ce.r, ce.g, ce.b);
+    // mid tint applied by mixing in shader-free way: alternate slight banding handled by shade
+    colA.splice(colA.length-6, 6, cc.r*0.92, cc.g*0.92, cc.b*0.92, cc.r, cc.g, cc.b);
+  }
+  for (let i=0;i<M;i++){
+    const a = i*2, b = i*2+1, c = i*2+2, d = i*2+3;
+    idxA.push(a,b,c, b,d,c);
+  }
+  const roadGeo = new THREE.BufferGeometry();
+  roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(posA, 3));
+  roadGeo.setAttribute('color', new THREE.Float32BufferAttribute(colA, 3));
+  roadGeo.setIndex(idxA);
+  roadGeo.computeVertexNormals();
+  scene.add(new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ vertexColors:true })));
+
+  // tilt barrier down the waist (x in [-55,55], z = 0)
+  const barrier = new THREE.Group();
+  const wood = mat(0xa9743a), woodD = mat(0x8a5c2c);
+  for (let x=-55; x<=55; x+=5.5){
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.5, 0.5), (x/5.5|0)%2 ? wood : woodD);
+    seg.position.set(x, 0.75, 0); barrier.add(seg);
+  }
+  // pennant string above barrier
+  const penCols = [0xd93636, 0xe6b422, 0x2f7fd9, 0xffffff, 0x8e5bd9];
+  for (let x=-54; x<=54; x+=3.5){
+    const pen = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.2, 3), mat(penCols[(x/3.5|0+500)%5 < 0 ? 0 : Math.abs(x/3.5|0)%5]));
+    pen.rotation.x = Math.PI; pen.position.set(x, 2.6, 0); barrier.add(pen);
+  }
+  const wire = new THREE.Mesh(new THREE.BoxGeometry(112, 0.06, 0.06), mat(0x555555));
+  wire.position.set(0, 3.2, 0); barrier.add(wire);
+  const postM = mat(0x7a5226);
+  for (let x=-55; x<=55; x+=11){
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,3.3,6), postM);
+    post.position.set(x, 1.65, 0); barrier.add(post);
+  }
+  scene.add(barrier);
+
+  // grandstands flanking the tilt lane
+  function grandstand(z, flip){
+    const gs = new THREE.Group();
+    for (let t=0;t<3;t++){
+      const step = box(96, 1.6, 3.2, 0xb8925a);
+      step.position.set(0, 0.8 + t*1.6, (t*3.2)*(flip?-1:1));
+      gs.add(step);
+    }
+    const roof = box(100, 0.5, 12, 0xd93636);
+    roof.position.set(0, 8.6, 3.2*(flip?-1:1));
+    gs.add(roof);
+    for (let x=-48; x<=48; x+=12){
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,8.5,6), mat(0xf3e2b3));
+      pole.position.set(x, 4.25, (flip?-6.4:6.4)); gs.add(pole);
+    }
+    // crowd
+    const crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 1.1, 0.7),
+      new THREE.MeshLambertMaterial(), 240);
+    const dummy = new THREE.Object3D(); const col = new THREE.Color();
+    let n = 0;
+    for (let t=0;t<3;t++){
+      for (let x=-46; x<=46 && n<240; x+=1.35){
+        if (Math.random()<0.18) continue;
+        dummy.position.set(x + (Math.random()-.5)*.4, 2.1 + t*1.6, (t*3.2 + (Math.random()-.5)*.8)*(flip?-1:1));
+        dummy.rotation.y = (Math.random()-.5)*.6;
+        dummy.updateMatrix();
+        crowd.setMatrixAt(n, dummy.matrix);
+        col.setHSL(Math.random(), 0.65, 0.55);
+        crowd.setColorAt(n, col);
+        n++;
+      }
+    }
+    crowd.count = n;
+    gs.add(crowd);
+    gs.position.set(0, 0, z);
+    scene.add(gs);
+  }
+  grandstand(-16, false);
+  grandstand(16, true);
+
+  // castle backdrop (north, between the lobes)
+  const castle = new THREE.Group();
+  const keep = box(34, 30, 22, 0xcfc5b4); keep.position.y = 15; castle.add(keep);
+  for (const [tx,tz] of [[-20,-13],[20,-13],[-20,13],[20,13]]){
+    const tw = new THREE.Mesh(new THREE.CylinderGeometry(5,5.5,38,10), mat(0xbfb5a4));
+    tw.position.set(tx, 19, tz); castle.add(tw);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(6.4, 9, 10), mat(0x2f5fa9));
+    roof.position.set(tx, 42.5, tz); castle.add(roof);
+    const fl = box(3.2, 2, 0.1, 0xd93636); fl.position.set(tx+1.7, 49, tz); castle.add(fl);
+    const flp = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,5,5), mat(0x555555));
+    flp.position.set(tx, 49, tz); castle.add(flp);
+  }
+  const wallL = box(46, 12, 4, 0xcfc5b4); wallL.position.set(-40, 6, 0); castle.add(wallL);
+  const wallR = box(46, 12, 4, 0xcfc5b4); wallR.position.set(40, 6, 0); castle.add(wallR);
+  castle.position.set(0, 0, 150); scene.add(castle);
+
+  // festival tents in the infield
+  const tentCols = [0xd93636, 0xe6b422, 0x2f7fd9, 0x8e5bd9, 0x3fae4a];
+  for (let i=0;i<7;i++){
+    const tx = -50 + i*17 + (Math.random()-.5)*8, tz = 38 + (Math.random()-.5)*16;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.8, 3.2, 8), mat(0xf7ecd2));
+    body.position.set(tx, 1.6, tz); scene.add(body);
+    const top = new THREE.Mesh(new THREE.ConeGeometry(4.2, 3.4, 8), mat(tentCols[i%5]));
+    top.position.set(tx, 5.0, tz); scene.add(top);
+  }
+
+  // trees
+  for (let i=0;i<26;i++){
+    const a = Math.random()*Math.PI*2, r = 190 + Math.random()*120;
+    const tx = Math.cos(a)*r, tz = 30 + Math.sin(a)*r*0.7;
+    if (Math.abs(tz-150) < 40 && Math.abs(tx) < 60) continue; // keep castle clear
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.8,4,6), mat(0x7a5226));
+    trunk.position.set(tx, 2, tz); scene.add(trunk);
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(3.6+Math.random()*2, 7+Math.random()*3, 7), mat(0x3f8f3a));
+    crown.position.set(tx, 7.5, tz); scene.add(crown);
+  }
+
+  // banner poles around the lobes
+  const bannerFlags = [];
+  for (let i=0;i<NS;i+=Math.floor(NS/26)){
+    const p = S.pos[i], t = S.tan[i];
+    if (Math.abs(p.x) < 62) continue; // skip the waist (stands live there)
+    const left = new THREE.Vector3(-t.z,0,t.x);
+    const bp = p.clone().addScaledVector(left, (p.z > 30 ? 1 : -1) * (HALF_W + 2.5));
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.14,7,5), mat(0xf3e2b3));
+    pole.position.set(bp.x, 3.5, bp.z); scene.add(pole);
+    const flag = box(2.6, 1.6, 0.08, penCols[(i/60|0)%5]);
+    flag.position.set(bp.x+1.3, 6.2, bp.z); scene.add(flag);
+    bannerFlags.push(flag);
+  }
+  window.__flags = bannerFlags;
+
+  // start gate on waist A
+  const gate = new THREE.Group();
+  const gp1 = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,9,8), mat(0xd93636)); gp1.position.set(0,4.5,-HALF_W-1);
+  const gp2 = gp1.clone(); gp2.position.z = HALF_W+1;
+  const gban = box(0.4, 2.2, HALF_W*2+2.4, 0xe6b422); gban.position.set(0, 8.2, 0);
+  gate.add(gp1, gp2, gban);
+  const startS = nearestSample(new THREE.Vector3(-18, 0, -5), -1);
+  gate.position.copy(S.pos[startS]);
+  gate.rotation.y = Math.atan2(S.tan[startS].x, S.tan[startS].z);
+  scene.add(gate);
+  // start line stripes
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(1.6, HALF_W*2), new THREE.MeshBasicMaterial({ color:0xffffff }));
+  line.rotation.x = -Math.PI/2; line.rotation.z = Math.atan2(S.tan[startS].x, S.tan[startS].z);
+  line.position.copy(S.pos[startS]); line.position.y = 0.04;
+  scene.add(line);
+  window.__startSample = startS;
+}
+const START_SAMPLE = window.__startSample;
+
+// ---------------- rider models ----------------
+const HORSE_COLS = [0x8a5a33, 0x4a3524, 0xd8cfc0, 0x2e2620, 0xa97a4a, 0x6e6e72];
+function buildRider(color, horseCol) {
+  const g = new THREE.Group();
+
+  // horse (faces +Z)
+  const horse = new THREE.Group();
+  const bodyM = mat(horseCol);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.3, 3.4), bodyM); body.position.y = 1.75; horse.add(body);
+  const neck = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.4, 0.9), bodyM);
+  neck.position.set(0, 2.6, 1.65); neck.rotation.x = -0.45; horse.add(neck);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.75, 1.3), bodyM);
+  head.position.set(0, 3.25, 2.25); horse.add(head);
+  const ear1 = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 4), bodyM); ear1.position.set(0.22, 3.75, 1.9); horse.add(ear1);
+  const ear2 = ear1.clone(); ear2.position.x = -0.22; horse.add(ear2);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.3, 0.3), mat(0x3a2a1a));
+  tail.position.set(0, 1.9, -1.85); tail.rotation.x = 0.5; horse.add(tail);
+  // caparison (rider-colored cloth)
+  const cloth = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.9, 3.0), mat(color));
+  cloth.position.y = 1.45; horse.add(cloth);
+  const legs = [];
+  for (const [lx, lz] of [[-0.5,1.2],[0.5,1.2],[-0.5,-1.2],[0.5,-1.2]]){
+    const lp = new THREE.Group(); lp.position.set(lx, 1.35, lz);
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.5, 0.34), bodyM);
+    leg.position.y = -0.75; lp.add(leg);
+    horse.add(lp); legs.push(lp);
+  }
+  g.add(horse);
+
+  // knight (detachable for ragdoll)
+  const knight = new THREE.Group();
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.15, 0.7), mat(color)); torso.position.y = 0.6; knight.add(torso);
+  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.62), mat(0xd8d8e0)); helm.position.y = 1.5; knight.add(helm);
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.1), mat(0x22242c)); visor.position.set(0, 1.5, 0.33); knight.add(visor);
+  const plume = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.75, 5), mat(color === 0x2b2b33 ? 0xd93636 : color));
+  plume.position.set(0, 2.15, -0.1); knight.add(plume);
+  // lance arm (right side), lance points forward +Z
+  const lanceGroup = new THREE.Group(); lanceGroup.position.set(0.72, 0.75, 0.15);
+  const lance = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.13, 4.6, 6), mat(0xe6cf9a));
+  lance.rotation.x = Math.PI/2; lance.position.z = 1.7; lanceGroup.add(lance);
+  const lanceTip = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.5, 6), mat(0xb8b8c4));
+  lanceTip.rotation.x = Math.PI/2; lanceTip.position.z = 4.15; lanceGroup.add(lanceTip);
+  const vamplate = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.4, 8), mat(0xb07d1f));
+  vamplate.rotation.x = -Math.PI/2; vamplate.position.z = 0.55; lanceGroup.add(vamplate);
+  knight.add(lanceGroup);
+  // shield (left side)
+  const shield = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.0, 0.75), mat(color));
+  shield.position.set(-0.68, 0.7, 0.1); knight.add(shield);
+  const shieldTrim = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.08, 0.83), mat(0xb07d1f));
+  shieldTrim.position.copy(shield.position); shieldTrim.position.x -= 0.01; knight.add(shieldTrim);
+
+  knight.position.set(0, 2.45, -0.3);
+  g.add(knight);
+
+  return { group:g, horse, legs, knight, lanceGroup, shield, shieldTrim, tail, cloth };
+}
+
+// ---------------- riders ----------------
+const GEAR_SPEED = [0, 17, 23, 29, 35];
+const GEAR_TIME = 2.6;         // clean seconds to advance a gear
+const ZONES = ['high','mid','low'];
+const GUARDS = ['shield','duck','weave'];   // shield blocks mid, duck evades high, weave evades low
+const GUARD_ICON = { shield:'🛡️', duck:'⬇️', weave:'〰️' };
+
+const ROSTER = [
+  { name:'Emerald Knight', color:0x2ecc71, player:true },
+  { name:'Sir Corbin',     color:0xd93636, aggr:0.72, skill:0.62 },
+  { name:'Lady Maribel',   color:0xe6b422, aggr:0.66, skill:0.72 },
+  { name:'Sir Tancred',    color:0x2f7fd9, aggr:0.78, skill:0.58 },
+  { name:'Sir Oswic',      color:0x8e5bd9, aggr:0.62, skill:0.66 },
+  { name:'Black Knight',   color:0x2b2b33, aggr:0.92, skill:0.80 },
+];
+
+class Rider {
+  constructor(def, idx){
+    this.def = def; this.idx = idx;
+    this.name = def.name; this.color = def.color;
+    this.isPlayer = !!def.player;
+    const m = buildRider(def.color, HORSE_COLS[idx % HORSE_COLS.length]);
+    Object.assign(this, m);
+    scene.add(this.group);
+
+    this.pos = new THREE.Vector3();
+    this.heading = 0;               // forward = (sin h, 0, cos h)
+    this.vel = new THREE.Vector3();
+    this.speed = 0; this.boost = 0;
+    this.gear = 1; this.gearTimer = 0;
+    this.hp = 100; this.stamina = 100;
+    this.sample = 0; this.lap = 0; this.prevDist = 0; this.progress = 0;
+    this.finished = false; this.finishTime = 0;
+
+    this.drifting = false; this.driftCharge = 0; this.driftDir = 0; this.slip = 0;
+    this.ducking = false; this.shielding = false;
+
+    this.strikeCd = 0; this.thrustT = -1; this.thrustZone = null; this.thrustHit = false;
+    this.staggerT = 0; this.invulnT = 0;
+    this.downed = 0; this.ragdoll = null;
+    this.guard = null; this.guardT = 0;
+    this.teleT = 0; this.teleZone = null;      // AI telegraph
+    this.aiLat = 0; this.aiLatT = 0; this.aiDecT = 0;
+    this.animT = Math.random()*10;
+
+    this.hitsLanded = 0; this.unhorses = 0; this.biggestHit = 0;
+  }
+
+  get forward(){ return new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading)); }
+  get mounted(){ return this.downed <= 0; }
+
+  placeOnGrid(row, col){
+    const s = wrap(START_SAMPLE - 14 - row*10);
+    const p = S.pos[s], t = S.tan[s];
+    const left = new THREE.Vector3(-t.z, 0, t.x);
+    this.pos.copy(p).addScaledVector(left, col ? 2.1 : -2.1);
+    this.heading = Math.atan2(t.x, t.z);
+    this.vel.set(0,0,0); this.speed = 0; this.boost = 0;
+    this.sample = s; this.prevDist = S.dist[s]; this.lap = 0; this.progress = 0;
+    this.hp = 100; this.stamina = 100; this.gear = 1; this.gearTimer = 0;
+    this.finished = false; this.downed = 0; this.staggerT = 0; this.invulnT = 0;
+    this.hitsLanded = 0; this.unhorses = 0; this.biggestHit = 0;
+    if (this.ragdoll){ scene.remove(this.ragdoll.mesh); this.ragdoll = null; this.knight.visible = true; }
+    this.syncMesh(0);
+  }
+
+  // ---------- per-frame ----------
+  update(dt){
+    this.animT += dt * (0.4 + this.speed*0.06);
+    this.strikeCd = Math.max(0, this.strikeCd - dt);
+    this.staggerT = Math.max(0, this.staggerT - dt);
+    this.invulnT = Math.max(0, this.invulnT - dt);
+    this.teleT = Math.max(0, this.teleT - dt);
+
+    if (this.downed > 0){
+      this.downed -= dt;
+      this.speed = Math.max(0, this.speed - 24*dt);
+      this.vel.copy(this.forward).multiplyScalar(this.speed);
+      this.pos.addScaledVector(this.vel, dt);
+      this.updateRagdoll(dt);
+      if (this.downed <= 0) this.remount();
+      this.trackProgress();
+      this.syncMesh(dt);
+      return;
+    }
+
+    if (this.isPlayer) this.playerControl(dt); else this.aiControl(dt);
+
+    // gear progression while riding clean
+    const gs = GEAR_SPEED[this.gear];
+    const clean = this.onRoad && this.staggerT <= 0 && this.speed > gs*0.8;
+    if (clean && this.gear < 4){
+      this.gearTimer += dt;
+      if (this.gearTimer > GEAR_TIME){ this.gear++; this.gearTimer = 0; if (this.isPlayer){ sfx.gearUp(); } }
+    } else if (!clean) this.gearTimer = Math.max(0, this.gearTimer - dt*2);
+
+    // stamina regen when not attacking/blocking
+    if (this.thrustT < 0 && !this.shielding)
+      this.stamina = Math.min(100, this.stamina + 13*dt);
+
+    // physics: speed toward target
+    let target = GEAR_SPEED[this.gear];
+    if (!this.isPlayer) target *= 0.93 + this.def.skill * 0.11;  // riders have different legs
+    if (this.throttle > 0 && this.throttle < 1) target *= 0.65;  // trotting, not galloping
+    if (!this.onRoad) target *= 0.55;
+    if (this.ducking) target *= 0.85;
+    if (this.staggerT > 0) target *= 0.6;
+    if (this.throttle < 0) target = Math.max(0, this.speed - 30*dt), this.speed = target;
+    else if (this.throttle > 0) this.speed += (target > this.speed ? 9.5 : -13) * dt;
+    else this.speed = Math.max(0, this.speed - 7*dt);
+    this.speed = Math.max(0, Math.min(this.speed, target > this.speed ? target : this.speed));
+    this.boost = Math.max(0, this.boost - 7*dt);
+
+    // steering & drift
+    const steer = this.steer;
+    let turnRate = 1.45 * (0.5 + Math.min(1, this.speed/26)*0.8);
+    const wantDrift = this.driftHeld && Math.abs(steer) > 0.2 && this.speed > 13;
+    if (wantDrift && !this.drifting){ this.drifting = true; this.driftDir = Math.sign(steer); this.driftCharge = 0; }
+    if (this.drifting){
+      if (!this.driftHeld || this.speed < 9) this.endDrift();
+      else {
+        turnRate *= 1.7;
+        const st = (steer * 0.6 + this.driftDir * 0.7); // biased into the slide
+        this.heading -= st * turnRate * dt;
+        this.slip = THREE.MathUtils.lerp(this.slip, this.driftDir * 0.5, 3.5*dt);
+        this.driftCharge += dt;
+        this.speed = Math.max(this.speed - 1.6*dt, GEAR_SPEED[1]);
+        if (particles.tick('dust'+this.idx, 0.05)) particles.dust(this.hoofPos(), this.driftCharge);
+      }
+    }
+    if (!this.drifting){
+      this.heading -= steer * turnRate * dt;
+      this.slip = THREE.MathUtils.lerp(this.slip, 0, 6*dt);
+    }
+
+    // velocity follows heading (with drift slip)
+    const dir = new THREE.Vector3(Math.sin(this.heading + this.slip), 0, Math.cos(this.heading + this.slip));
+    const v = this.speed + this.boost;
+    this.vel.copy(dir).multiplyScalar(v);
+    this.pos.addScaledVector(this.vel, dt);
+
+    this.collide();
+    this.trackProgress();
+
+    // thrust animation timeline
+    if (this.thrustT >= 0){
+      this.thrustT += dt;
+      if (this.thrustT > 0.12 && this.thrustT < 0.32 && !this.thrustHit) this.tryHit();
+      if (this.thrustT > 0.45){ this.thrustT = -1; this.thrustZone = null; }
+    }
+
+    this.syncMesh(dt);
+  }
+
+  hoofPos(){
+    return this.pos.clone().addScaledVector(this.forward, -1.4).add(new THREE.Vector3(0, 0.3, 0));
+  }
+
+  endDrift(){
+    this.drifting = false;
+    if (this.driftCharge > 1.7){
+      this.boost = Math.min(this.boost + 13, 16);
+      this.stamina = Math.min(100, this.stamina + 22);
+      if (this.isPlayer){ flashBoost('FULL TILT!'); sfx.boost(); }
+      particles.burst(this.hoofPos(), 0xffd75e, 14);
+    } else if (this.driftCharge > 0.85){
+      this.boost = Math.min(this.boost + 8, 16);
+      this.stamina = Math.min(100, this.stamina + 12);
+      if (this.isPlayer){ flashBoost('SURGE!'); sfx.boost(); }
+      particles.burst(this.hoofPos(), 0xffa93b, 8);
+    }
+    this.driftCharge = 0;
+  }
+
+  collide(){
+    // tilt barrier — push out and deflect along it rather than grinding to a halt
+    if (Math.abs(this.pos.x) < 57 && Math.abs(this.pos.z) < 1.5){
+      this.pos.z = Math.sign(this.pos.z || 1) * 1.5;
+      this.speed *= 0.988;
+      const along = Math.sign(Math.sin(this.heading)) * Math.PI/2; // ±x, whichever way we're going
+      let diff = (along - this.heading) % (Math.PI*2);
+      if (diff > Math.PI) diff -= Math.PI*2; if (diff < -Math.PI) diff += Math.PI*2;
+      this.heading += diff * 0.08;
+    }
+    // world bounds (soft ellipse)
+    const ex = this.pos.x/175, ez = (this.pos.z-38)/130;
+    if (ex*ex + ez*ez > 1){
+      this.pos.x *= 0.99; this.pos.z = 38 + (this.pos.z-38)*0.99;
+      this.speed *= 0.9;
+    }
+  }
+
+  trackProgress(){
+    this.sample = nearestSample(this.pos, this.sample);
+    const d = S.dist[this.sample];
+    this.onRoad = this.pos.distanceTo(S.pos[this.sample]) < HALF_W + 0.9;
+    // lap detection
+    const rel = (d - S.dist[START_SAMPLE] + S.total) % S.total;
+    const prevRel = (this.prevDist - S.dist[START_SAMPLE] + S.total) % S.total;
+    if (prevRel > S.total*0.9 && rel < S.total*0.1){
+      this.lap++;
+      if (this.isPlayer && !this.finished && this.lap <= LAPS) {
+        if (this.lap < LAPS) { feed(`Lap ${this.lap+1} — ride hard!`); sfx.fanfareShort(); }
+      }
+      if (this.lap >= LAPS && !this.finished){
+        this.finished = true; this.finishTime = raceTime;
+        if (this.isPlayer) finishRace();
+        else feed(`${this.name} has finished!`);
+      }
+    } else if (prevRel < S.total*0.1 && rel > S.total*0.9){
+      this.lap = Math.max(0, this.lap-1); // went backwards over the line
+    }
+    this.prevDist = d;
+    this.progress = this.lap * S.total + rel;
+  }
+
+  // ---------- combat ----------
+  strike(zone){
+    if (!this.mounted || this.thrustT >= 0 || this.strikeCd > 0 || this.stamina < 25 || this.staggerT > 0) return;
+    this.stamina -= 25;
+    this.strikeCd = 0.95;
+    this.thrustT = 0; this.thrustZone = zone; this.thrustHit = false;
+    if (this.isPlayer) sfx.swish();
+  }
+
+  tryHit(){
+    // active-window sweep: lance hitbox is a box in local space —
+    // reach 7 ahead of the saddle, 3.5 to either side, tolerates targets ~1 behind
+    const fwd = this.forward, lat = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    for (const r of riders){
+      if (r === this || !r.mounted || r.invulnT > 0 || r.finished) continue;
+      const to = r.pos.clone().sub(this.pos);
+      const f = to.dot(fwd), l = Math.abs(to.dot(lat));
+      if (f < -1.2 || f > 7.0 || l > 3.5) continue;
+      this.thrustHit = true;
+      resolveHit(this, r, this.thrustZone);
+      return;
+    }
+  }
+
+  takeHit(from, zone, dmg){
+    this.hp -= dmg;
+    this.staggerT = Math.max(this.staggerT, 0.55);
+    if (zone === 'low'){ this.gear = 1; this.gearTimer = 0; this.speed *= 0.6; }
+    else this.speed *= 0.85;
+    if (this.hp <= 0) this.unhorse(from);
+  }
+
+  unhorse(by){
+    if (this.downed > 0) return;
+    this.downed = 3.0;
+    this.gear = 1; this.gearTimer = 0; this.driftCharge = 0; this.drifting = false;
+    this.thrustT = -1; this.teleT = 0; this.guard = null;
+    if (by){ by.unhorses++; }
+    // ragdoll: detach a clone of the knight
+    this.knight.visible = false;
+    const rag = this.knight.clone(); rag.visible = true;
+    rag.position.copy(this.pos).add(new THREE.Vector3(0, 2.4, 0));
+    rag.rotation.y = this.heading;
+    scene.add(rag);
+    this.ragdoll = {
+      mesh: rag,
+      vel: this.forward.multiplyScalar(-4).add(new THREE.Vector3((Math.random()-.5)*6, 11 + Math.random()*4, 0)),
+      spin: new THREE.Vector3(Math.random()*8-4, Math.random()*6-3, Math.random()*8-4),
+      t: 0,
+    };
+    particles.burst(this.pos.clone().add(new THREE.Vector3(0,2.5,0)), 0xffffff, 10);
+    sfx.crash(); sfx.cheer();
+    shake(this.isPlayer ? 1.0 : 0.4);
+    feed(`💥 ${by ? by.name : 'The turf'} UNHORSED ${this.name}!`, '#ffd75e');
+  }
+
+  updateRagdoll(dt){
+    const r = this.ragdoll; if (!r) return;
+    r.t += dt;
+    r.vel.y -= 26*dt;
+    r.mesh.position.addScaledVector(r.vel, dt);
+    if (r.mesh.position.y < 0.6){ r.mesh.position.y = 0.6; r.vel.set(0,0,0); r.spin.multiplyScalar(0.85); }
+    r.mesh.rotation.x += r.spin.x*dt; r.mesh.rotation.y += r.spin.y*dt; r.mesh.rotation.z += r.spin.z*dt;
+  }
+
+  remount(){
+    this.downed = 0;
+    if (this.ragdoll){ scene.remove(this.ragdoll.mesh); this.ragdoll = null; }
+    this.knight.visible = true;
+    this.hp = 100; this.stamina = 55; this.speed = 4;
+    this.invulnT = 2.0;
+    if (this.isPlayer) feed('Back in the saddle — ride!', '#9ff08a');
+  }
+
+  // ---------- control ----------
+  playerControl(dt){
+    this.throttle = keys.w ? 1 : (keys.s ? -1 : 0.35);   // light auto-trot, W to gallop
+    this.steer = (keys.a ? -1 : 0) + (keys.d ? 1 : 0);
+    this.driftHeld = keys.shift;
+    this.ducking = keys.s;
+    const wantShield = keys.space && this.stamina > 4;
+    if (wantShield && !this.shielding) this.stamina -= 4;
+    this.shielding = wantShield;
+    if (this.shielding) this.stamina = Math.max(0, this.stamina - 7*dt);
+  }
+
+  aiControl(dt){
+    // --- steering: chase a point down the spline with a personal lateral drift
+    this.aiLatT -= dt;
+    if (this.aiLatT <= 0){ this.aiLat = (Math.random()-.5)*4.6; this.aiLatT = 2 + Math.random()*3; }
+    // hug the tilt barrier through the waist — that's where the jousting is (staggered lines so the pack doesn't jam)
+    const inWaist = Math.abs(this.pos.x) < 55 && Math.abs(this.pos.z) < 10;
+    const lat = inWaist ? 1.2 + (this.idx % 3) * 0.9 : this.aiLat;
+    const look = 26 + this.speed*1.1;
+    const ti = wrap(this.sample + Math.round(look/S.total*NS*1.0));
+    const t = S.tan[ti];
+    const left = new THREE.Vector3(-t.z, 0, t.x);
+    const target = S.pos[ti].clone().addScaledVector(left, lat);
+    const to = target.sub(this.pos);
+    const desired = Math.atan2(to.x, to.z);
+    let diff = desired - this.heading;
+    while (diff > Math.PI) diff -= Math.PI*2;
+    while (diff < -Math.PI) diff += Math.PI*2;
+    this.steer = THREE.MathUtils.clamp(-diff*2.2, -1, 1);
+    // brake for curvature
+    const curv = curvatureAhead(this.sample, 60 + Math.round(this.speed));
+    this.throttle = curv > 0.75 && this.speed > 20 ? -0.3 : 1;
+    this.driftHeld = curv > 0.5 && this.speed > 18;
+    this.ducking = false;
+
+    // --- combat brain (bloodthirsty): re-decide every so often
+    this.aiDecT -= dt;
+    const foe = this.nearestFoe();
+    if (foe){
+      if (this.aiDecT <= 0){
+        this.aiDecT = 0.55 + Math.random()*0.55;
+        this.guard = GUARDS[Math.random()*3|0];
+        this.guardT = 1.2;
+        const closing = this.closingSpeed(foe);
+        const canStrike = this.stamina >= 25 && this.strikeCd <= 0 && this.thrustT < 0 && this.teleT <= 0;
+        if (canStrike && Math.random() < this.def.aggr){
+          // telegraph, then strike
+          let zone;
+          if (Math.random() < this.def.skill && foe.isPlayer){
+            // aim at whatever the player is NOT covering
+            const open = ZONES.filter(z =>
+              !(z==='mid' && foe.shielding) && !(z==='high' && foe.ducking) && !(z==='low' && foe.drifting));
+            zone = open.length ? open[Math.random()*open.length|0] : ZONES[Math.random()*3|0];
+          } else if (Math.random() < this.def.skill && foe.guard){
+            const open = ZONES.filter(z => !beatsGuard(foe.guard, z));
+            zone = open.length ? open[Math.random()*open.length|0] : ZONES[Math.random()*3|0];
+          } else zone = ZONES[Math.random()*3|0];
+          this.teleT = closing > 25 ? 0.3 : 0.45;
+          this.teleZone = zone;
+        }
+      }
+      if (this.teleT > 0 && this.teleT - dt <= 0 && this.teleZone){
+        this.strike(this.teleZone);
+        this.teleZone = null;
+      }
+      this.guardT -= dt;
+      if (this.guardT <= 0) this.guard = null;
+    } else { this.guard = null; this.teleZone = null; }
+
+    this.shielding = this.guard === 'shield';
+    if (this.guard === 'duck') this.ducking = true;
+  }
+
+  nearestFoe(){
+    let best = null, bd = Infinity;
+    for (const r of riders){
+      if (r === this || !r.mounted || r.finished) continue;
+      const d = this.pos.distanceTo(r.pos);
+      const closing = this.closingSpeed(r);
+      const range = closing > 20 ? 30 : 13;   // pre-engage for head-on passes
+      if (d < range && d < bd){
+        // must be roughly ahead or beside
+        const dot = this.forward.dot(r.pos.clone().sub(this.pos).normalize());
+        if (dot > -0.2){ bd = d; best = r; }
+      }
+    }
+    return best;
+  }
+
+  closingSpeed(r){
+    const dir = r.pos.clone().sub(this.pos).normalize();
+    return this.vel.clone().sub(r.vel).dot(dir);
+  }
+
+  // ---------- visuals ----------
+  syncMesh(dt){
+    this.group.position.copy(this.pos);
+    this.group.rotation.y = this.heading;
+    // lean into drift, wobble when staggered
+    let roll = this.drifting ? -this.driftDir*0.22 : 0;
+    if (this.staggerT > 0) roll += Math.sin(performance.now()*0.03)*0.1;
+    this.group.rotation.z = THREE.MathUtils.lerp(this.group.rotation.z, roll, 8*(dt||0.016));
+    this.group.rotation.x = 0;
+
+    // gallop
+    const spd = this.speed + this.boost;
+    const f = this.animT * 9;
+    const amp = Math.min(1, spd/22);
+    this.horse.position.y = Math.abs(Math.sin(f)) * 0.34 * amp;
+    this.horse.rotation.x = Math.sin(f*2) * 0.045 * amp;
+    this.legs[0].rotation.x = Math.sin(f) * 0.9 * amp;
+    this.legs[1].rotation.x = Math.sin(f + 0.6) * 0.9 * amp;
+    this.legs[2].rotation.x = Math.sin(f + Math.PI) * 0.85 * amp;
+    this.legs[3].rotation.x = Math.sin(f + Math.PI + 0.6) * 0.85 * amp;
+    this.tail.rotation.x = 0.5 + Math.sin(f)*0.25*amp;
+
+    if (this.mounted){
+      this.knight.position.y = 2.45 + Math.abs(Math.sin(f))*0.1*amp;
+      // duck / shield poses
+      const duckS = this.ducking ? 0.62 : 1;
+      this.knight.scale.y = THREE.MathUtils.lerp(this.knight.scale.y, duckS, 10*(dt||0.016));
+      const shTarget = this.shielding ? -0.9 : 0;
+      this.shield.rotation.z = this.shieldTrim.rotation.z = THREE.MathUtils.lerp(this.shield.rotation.z, shTarget, 12*(dt||0.016));
+      const shY = this.shielding ? 1.15 : 0.7;
+      this.shield.position.y = this.shieldTrim.position.y = THREE.MathUtils.lerp(this.shield.position.y, shY, 12*(dt||0.016));
+      // weave (drift or weave-guard) — lateral bob
+      const weaving = this.drifting || this.guard === 'weave';
+      this.knight.position.x = weaving ? Math.sin(performance.now()*0.012)*0.3 : 0;
+      // lance pose: rest → telegraph raise → thrust
+      let lz = 0.15, ly = 0.75, pitch = 0.12;
+      if (this.teleT > 0){ pitch = -0.5; ly = 1.1; }
+      if (this.thrustT >= 0){
+        const k = Math.sin(Math.min(1, this.thrustT/0.32) * Math.PI);
+        lz = 0.15 + k*1.3;
+        pitch = this.thrustZone === 'high' ? -0.32 : this.thrustZone === 'low' ? 0.38 : 0.02;
+      }
+      this.lanceGroup.position.z = THREE.MathUtils.lerp(this.lanceGroup.position.z, lz, 16*(dt||0.016));
+      this.lanceGroup.position.y = THREE.MathUtils.lerp(this.lanceGroup.position.y, ly, 12*(dt||0.016));
+      this.lanceGroup.rotation.x = THREE.MathUtils.lerp(this.lanceGroup.rotation.x, pitch, 14*(dt||0.016));
+      // invuln flash
+      this.knight.visible = this.invulnT > 0 ? (performance.now()*0.02|0)%2===0 : true;
+    }
+  }
+}
+
+function beatsGuard(guard, zone){
+  return (guard==='shield' && zone==='mid') || (guard==='duck' && zone==='high') || (guard==='weave' && zone==='low');
+}
+
+function resolveHit(atk, def, zone){
+  const closing = Math.max(0, atk.closingSpeed(def));
+  // defender's cover
+  const covered =
+    (zone==='mid'  && (def.shielding || def.guard==='shield')) ||
+    (zone==='high' && (def.ducking   || def.guard==='duck'))   ||
+    (zone==='low'  && (def.drifting  || def.guard==='weave'));
+
+  const impact = def.pos.clone().lerp(atk.pos, 0.4).add(new THREE.Vector3(0, 2.6, 0));
+
+  if (covered){
+    if (zone === 'mid'){
+      // shield block: attacker staggered
+      atk.staggerT = 0.7; atk.speed *= 0.72; atk.stamina = Math.max(0, atk.stamina - 10);
+      particles.burst(impact, 0xcfd6e6, 8);
+      sfx.clang(); shake(0.25);
+      if (atk.isPlayer || def.isPlayer) feed(`${def.name} BLOCKED ${atk.name}'s lance!`, '#bcd0f5');
+      popup(impact, 'BLOCKED', '#bcd0f5');
+    } else {
+      sfx.whiff();
+      if (atk.isPlayer || def.isPlayer) popup(impact, zone==='high' ? 'DUCKED' : 'WEAVED', '#bcd0f5');
+    }
+    return;
+  }
+
+  let dmg;
+  if (zone === 'high') dmg = 26 + closing*0.85;
+  else if (zone === 'mid') dmg = 18 + closing*0.55;
+  else dmg = 10 + closing*0.3;
+  dmg = Math.min(70, Math.round(dmg));
+  atk.hitsLanded++;
+  atk.biggestHit = Math.max(atk.biggestHit, dmg);
+
+  // spectacular head-on high strike = instant unhorse
+  const skewer = zone === 'high' && closing > 42;
+
+  particles.burst(impact, 0xe6cf9a, skewer ? 22 : 12);   // lance splinters!
+  particles.burst(impact, 0xffd75e, 6);
+  sfx.crack(closing > 30);
+  shake((atk.isPlayer || def.isPlayer) ? Math.min(1, dmg/45) : 0.15);
+  hitPause = Math.min(0.09, 0.03 + dmg*0.001);
+  popup(impact, `${dmg}`, zone==='high' ? '#ff5b4d' : zone==='mid' ? '#ffd75e' : '#9ff08a');
+
+  if (skewer){ def.hp = 0; def.unhorse(atk); }
+  else {
+    def.takeHit(atk, zone, dmg);
+    if (def.downed <= 0 && (atk.isPlayer || def.isPlayer) && dmg >= 30)
+      feed(`${atk.name} lands a ${zone.toUpperCase()} strike on ${def.name} — ${dmg}!`);
+  }
+}
+
+// rider-rider soft body collision
+function bodyCollisions(){
+  for (let i=0;i<riders.length;i++) for (let j=i+1;j<riders.length;j++){
+    const a = riders[i], b = riders[j];
+    if (!a.mounted || !b.mounted) continue;
+    const d = a.pos.distanceTo(b.pos);
+    if (d < 3.1 && d > 0.001){
+      const ab = b.pos.clone().sub(a.pos).normalize();
+      const push = ab.clone().multiplyScalar((3.1-d)*0.5);
+      a.pos.sub(push); b.pos.add(push);
+      // only the rider doing the ramming slows down
+      if (a.forward.dot(ab) > 0.4) a.speed *= 0.995;
+      if (b.forward.dot(ab) < -0.4) b.speed *= 0.995;
+    }
+  }
+}
+
+// ---------------- particles ----------------
+const particles = {
+  pool: [], tickers: {},
+  init(){
+    const cv = document.createElement('canvas'); cv.width = cv.height = 32;
+    const c = cv.getContext('2d');
+    const grad = c.createRadialGradient(16,16,2,16,16,16);
+    grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = grad; c.fillRect(0,0,32,32);
+    this.tex = new THREE.CanvasTexture(cv);
+    for (let i=0;i<90;i++){
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:this.tex, transparent:true, depthWrite:false }));
+      sp.visible = false; scene.add(sp);
+      this.pool.push({ sp, vel:new THREE.Vector3(), life:0, max:1 });
+    }
+  },
+  tick(key, interval){
+    const now = performance.now()/1000;
+    if (!this.tickers[key] || now - this.tickers[key] > interval){ this.tickers[key] = now; return true; }
+    return false;
+  },
+  spawn(pos, col, vel, life, scale){
+    const p = this.pool.find(p => p.life <= 0); if (!p) return;
+    p.sp.visible = true; p.sp.position.copy(pos);
+    p.sp.material.color.setHex(col); p.sp.material.opacity = 0.9;
+    p.sp.scale.setScalar(scale);
+    p.vel.copy(vel); p.life = p.max = life;
+  },
+  dust(pos, charge){
+    const col = charge > 1.7 ? 0xffd75e : charge > 0.85 ? 0xffa93b : 0xcdb68f;
+    this.spawn(pos.clone().add(new THREE.Vector3((Math.random()-.5)*1.5,0,(Math.random()-.5)*1.5)),
+      col, new THREE.Vector3((Math.random()-.5)*2, 2+Math.random()*2, (Math.random()-.5)*2), 0.5, 1.6);
+  },
+  burst(pos, col, n){
+    for (let i=0;i<n;i++)
+      this.spawn(pos, col, new THREE.Vector3((Math.random()-.5)*14, Math.random()*10, (Math.random()-.5)*14), 0.55, 0.8);
+  },
+  update(dt){
+    for (const p of this.pool){
+      if (p.life <= 0) continue;
+      p.life -= dt;
+      if (p.life <= 0){ p.sp.visible = false; continue; }
+      p.vel.y -= 12*dt;
+      p.sp.position.addScaledVector(p.vel, dt);
+      p.sp.material.opacity = 0.9 * (p.life/p.max);
+    }
+  }
+};
+particles.init();
+
+// ---------------- audio ----------------
+const sfx = (() => {
+  let ctx = null, master = null, muted = false;
+  const ensure = () => {
+    if (!ctx){ ctx = new (window.AudioContext||window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = 0.45; master.connect(ctx.destination); }
+    if (ctx.state === 'suspended') ctx.resume();
+  };
+  const noise = (dur, freq, q, vol, type='bandpass') => {
+    if (muted) return; ensure();
+    const buf = ctx.createBuffer(1, ctx.sampleRate*dur, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain(); g.gain.setValueAtTime(vol, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    src.connect(f); f.connect(g); g.connect(master); src.start();
+  };
+  const tone = (freq, dur, vol, type='square', when=0) => {
+    if (muted) return; ensure();
+    const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
+    const g = ctx.createGain();
+    const t0 = ctx.currentTime + when;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0+0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t0+dur);
+    o.connect(g); g.connect(master); o.start(t0); o.stop(t0+dur+0.05);
+  };
+  return {
+    toggleMute(){ muted = !muted; return muted; },
+    clop(vol){ noise(0.07, 900+Math.random()*300, 4, vol); },
+    swish(){ noise(0.16, 2400, 1.5, 0.25, 'highpass'); },
+    whiff(){ noise(0.2, 1600, 2, 0.18, 'highpass'); },
+    crack(big){ noise(0.16, 700, 1.2, big?0.85:0.55, 'lowpass'); noise(0.1, 3200, 2, 0.4, 'highpass'); },
+    clang(){ tone(620, 0.22, 0.3, 'triangle'); tone(930, 0.16, 0.2, 'triangle'); },
+    crash(){ noise(0.5, 300, 1, 0.7, 'lowpass'); },
+    cheer(){ noise(1.4, 1200, 0.6, 0.35); noise(1.1, 2000, 0.6, 0.2, 'highpass'); },
+    boost(){ noise(0.4, 500, 2, 0.4, 'highpass'); tone(340, 0.3, 0.22, 'sawtooth'); },
+    gearUp(){ tone(440, 0.1, 0.2); tone(660, 0.12, 0.2, 'square', 0.08); },
+    count(hi){ tone(hi?880:440, hi?0.4:0.18, 0.3, 'square'); },
+    fanfareShort(){ [523,659,784].forEach((f,i)=>tone(f, 0.14, 0.25, 'square', i*0.09)); },
+    fanfare(){ [523,659,784,1046,784,1046].forEach((f,i)=>tone(f, 0.18, 0.28, 'square', i*0.13)); },
+  };
+})();
+
+// ---------------- HUD helpers ----------------
+const $ = id => document.getElementById(id);
+const feedBox = $('feed');
+function feed(msg, color){
+  const div = document.createElement('div');
+  div.className = 'feedmsg'; div.textContent = msg;
+  if (color) div.style.borderLeftColor = color;
+  feedBox.appendChild(div);
+  while (feedBox.children.length > 5) feedBox.firstChild.remove();
+  setTimeout(() => { if (div.parentNode) div.remove(); }, 4200);
+}
+function flashBoost(text){
+  const el = $('boostFlash'); el.textContent = text;
+  el.style.transition = 'none'; el.style.opacity = 1;
+  requestAnimationFrame(() => { el.style.transition = 'opacity 1.1s'; el.style.opacity = 0; });
+}
+const popups = [];
+function popup(worldPos, text, color){
+  const div = document.createElement('div');
+  div.className = 'dmgpop'; div.textContent = text;
+  div.style.color = color; div.style.fontSize = text.length > 3 ? '15px' : '22px';
+  document.body.appendChild(div);
+  popups.push({ div, pos: worldPos.clone(), t: 0 });
+}
+function updatePopups(dt){
+  const v = new THREE.Vector3();
+  for (let i=popups.length-1;i>=0;i--){
+    const p = popups[i]; p.t += dt;
+    p.pos.y += dt*2.2;
+    v.copy(p.pos).project(camera);
+    if (p.t > 1 || v.z > 1){ p.div.remove(); popups.splice(i,1); continue; }
+    p.div.style.left = (v.x*0.5+0.5)*innerWidth + 'px';
+    p.div.style.top = (-v.y*0.5+0.5)*innerHeight + 'px';
+    p.div.style.opacity = 1 - p.t;
+  }
+}
+
+// engage tags (one per AI rider)
+const engTags = [];
+for (let i=0;i<5;i++){
+  const d = document.createElement('div');
+  d.className = 'engTag';
+  d.innerHTML = `<div class="gicon"></div><div class="gname"></div>`;
+  document.body.appendChild(d);
+  engTags.push(d);
+}
+function updateEngageTags(){
+  const p = player;
+  const v = new THREE.Vector3();
+  let ti = 0;
+  for (const r of riders){
+    if (r.isPlayer) continue;
+    const tag = engTags[ti++];
+    const d = p.pos.distanceTo(r.pos);
+    const closing = p.closingSpeed(r);
+    const engaged = r.mounted && !r.finished && (d < 14 || (closing > 20 && d < 32));
+    if (!engaged || state !== 'race'){ tag.style.display = 'none'; continue; }
+    v.copy(r.pos).add(new THREE.Vector3(0, 5.6, 0)).project(camera);
+    if (v.z > 1){ tag.style.display = 'none'; continue; }
+    tag.style.display = 'block';
+    tag.style.left = (v.x*0.5+0.5)*innerWidth + 'px';
+    tag.style.top = (-v.y*0.5+0.5)*innerHeight + 'px';
+    const icon = tag.querySelector('.gicon'), name = tag.querySelector('.gname');
+    name.textContent = r.name;
+    if (r.teleT > 0) { icon.textContent = '❗'; icon.style.color = '#ff5b4d'; }
+    else { icon.textContent = r.guard ? GUARD_ICON[r.guard] : ''; icon.style.color = '#fff'; }
+  }
+}
+
+// zone hints
+function updateLanceHud(){
+  const p = player;
+  let foe = null, bd = Infinity;
+  for (const r of riders){
+    if (r.isPlayer || !r.mounted || r.finished) continue;
+    const d = p.pos.distanceTo(r.pos);
+    const closing = p.closingSpeed(r);
+    if ((d < 14 || (closing > 20 && d < 32)) && d < bd){ bd = d; foe = r; }
+  }
+  const ok = foe && p.stamina >= 25 && p.strikeCd <= 0 && p.mounted;
+  for (const [id, zone] of [['zHigh','high'],['zMid','mid'],['zLow','low']]){
+    const el = $(id);
+    el.classList.toggle('ready', !!ok);
+    el.classList.toggle('beats', !!(ok && foe.guard && !beatsGuard(foe.guard, zone) &&
+      ZONES.filter(z=>!beatsGuard(foe.guard,z)).length < 3));
+  }
+}
+
+// minimap
+const mm = $('minimap').getContext('2d');
+const mmPath = (() => {
+  const path = [];
+  for (let i=0;i<NS;i+=10) path.push(S.pos[i]);
+  return path;
+})();
+function mmX(x){ return (x + 170) / 340 * 200 + 5; }
+function mmY(z){ return 125 - ((z + 40) / 160 * 120); }
+function drawMinimap(){
+  mm.clearRect(0,0,210,130);
+  mm.strokeStyle = 'rgba(255,255,255,.75)'; mm.lineWidth = 3; mm.lineJoin = 'round';
+  mm.beginPath();
+  mmPath.forEach((p,i) => i ? mm.lineTo(mmX(p.x), mmY(p.z)) : mm.moveTo(mmX(p.x), mmY(p.z)));
+  mm.closePath(); mm.stroke();
+  // start line
+  const sp = S.pos[START_SAMPLE];
+  mm.fillStyle = '#ffd75e'; mm.fillRect(mmX(sp.x)-1.5, mmY(sp.z)-5, 3, 10);
+  for (const r of riders){
+    mm.beginPath();
+    mm.arc(mmX(r.pos.x), mmY(r.pos.z), r.isPlayer ? 4.4 : 3.2, 0, Math.PI*2);
+    mm.fillStyle = '#' + r.color.toString(16).padStart(6,'0');
+    if (r.color === 0x2b2b33) mm.fillStyle = '#555';
+    mm.fill();
+    if (r.isPlayer){ mm.strokeStyle = '#fff'; mm.lineWidth = 2; mm.stroke(); }
+  }
+}
+
+// ---------------- input ----------------
+const keys = { w:false, a:false, s:false, d:false, shift:false, space:false };
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'w' || k === 'arrowup') keys.w = true;
+  if (k === 'a' || k === 'arrowleft') keys.a = true;
+  if (k === 's' || k === 'arrowdown') keys.s = true;
+  if (k === 'd' || k === 'arrowright') keys.d = true;
+  if (k === 'shift') keys.shift = true;
+  if (k === ' '){ keys.space = true; e.preventDefault(); }
+  if (state === 'race'){
+    if (k === 'i') player.strike('high');
+    if (k === 'o') player.strike('mid');
+    if (k === 'p') player.strike('low');
+  }
+  if (k === 'enter' && state === 'title') startRace();
+  if (k === 'r' && (state === 'race' || state === 'results')) startRace();
+  if (k === 'm') feed(sfx.toggleMute() ? 'Muted' : 'Sound on');
+});
+addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'w' || k === 'arrowup') keys.w = false;
+  if (k === 'a' || k === 'arrowleft') keys.a = false;
+  if (k === 's' || k === 'arrowdown') keys.s = false;
+  if (k === 'd' || k === 'arrowright') keys.d = false;
+  if (k === 'shift') keys.shift = false;
+  if (k === ' ') keys.space = false;
+});
+
+// ---------------- race flow ----------------
+const LAPS = 3;
+let state = 'title';       // title | countdown | race | results
+let raceTime = 0, countT = 0;
+let hitPause = 0, shakeAmp = 0;
+function shake(a){ shakeAmp = Math.max(shakeAmp, a); }
+
+const riders = ROSTER.map((def, i) => new Rider(def, i));
+const player = riders[0];
+
+function gridUp(){
+  // player starts at the back — earn it
+  const order = [1, 2, 3, 4, 5, 0];
+  order.forEach((rIdx, slot) => riders[rIdx].placeOnGrid(Math.floor(slot/2), slot%2));
+}
+gridUp();
+
+function startRace(){
+  $('titleOverlay').style.display = 'none';
+  $('resultsOverlay').style.display = 'none';
+  $('topbar').style.display = 'flex';
+  $('vitals').style.display = 'block';
+  $('lanceHud').style.display = 'block';
+  feedBox.innerHTML = '';
+  gridUp();
+  playerDownedCount = 0;
+  raceTime = 0; countT = 3.6;
+  state = 'countdown';
+  sfx.count(false);
+}
+
+function finishRace(){
+  state = 'results';
+  sfx.fanfare(); sfx.cheer();
+  const sorted = [...riders].sort((a,b) =>
+    (a.finished && b.finished) ? a.finishTime - b.finishTime :
+    a.finished ? -1 : b.finished ? 1 : b.progress - a.progress);
+  const place = sorted.indexOf(player) + 1;
+  const suffix = ['st','nd','rd'][place-1] || 'th';
+  $('resTitle').textContent = `${place}${suffix} Place${place===1 ? '!' : ''}`;
+  $('resTag').textContent = place === 1 ? 'The crowd roars — champion of the tilt!' :
+    place <= 3 ? 'A worthy showing at the tourney.' : 'The squires avert their eyes...';
+  const mins = Math.floor(player.finishTime/60), secs = (player.finishTime%60).toFixed(1);
+  $('resTable').innerHTML = `
+    <tr><td class="k">Time</td><td>${mins}:${secs.padStart(4,'0')}</td></tr>
+    <tr><td class="k">Lances landed</td><td>${player.hitsLanded}</td></tr>
+    <tr><td class="k">Knights unhorsed</td><td>${player.unhorses}</td></tr>
+    <tr><td class="k">Biggest hit</td><td>${player.biggestHit || '—'}</td></tr>
+    <tr><td class="k">Times unhorsed</td><td>${playerDownedCount}</td></tr>`;
+  setTimeout(() => { $('resultsOverlay').style.display = 'flex'; }, 900);
+}
+
+let playerDownedCount = 0;
+const origUnhorse = Rider.prototype.unhorse;
+Rider.prototype.unhorse = function(by){
+  const wasMounted = this.downed <= 0;
+  origUnhorse.call(this, by);
+  if (this.isPlayer && wasMounted) playerDownedCount++;
+};
+
+// ---------------- camera ----------------
+const camPos = new THREE.Vector3(0, 30, -60);
+function updateCamera(dt){
+  const p = player;
+  const fwd = p.forward;
+  const back = fwd.clone().multiplyScalar(-11.5);
+  const lat = new THREE.Vector3(-fwd.z, 0, fwd.x).multiplyScalar(p.drifting ? p.driftDir*2.2 : 0);
+  const target = p.pos.clone().add(back).add(lat).add(new THREE.Vector3(0, 6.2, 0));
+  camPos.lerp(target, Math.min(1, 5.5*dt));
+  const sh = shakeAmp;
+  camera.position.copy(camPos).add(new THREE.Vector3((Math.random()-.5)*sh, (Math.random()-.5)*sh*0.7, (Math.random()-.5)*sh));
+  shakeAmp = Math.max(0, shakeAmp - 3.2*dt);
+  const look = p.pos.clone().add(fwd.clone().multiplyScalar(7)).add(new THREE.Vector3(0, 2.2, 0));
+  camera.lookAt(look);
+  const spd = p.speed + p.boost;
+  const targetFov = 58 + spd*0.42 + (p.boost > 2 ? 6 : 0);
+  camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 4*dt);
+  camera.updateProjectionMatrix();
+}
+
+// ---------------- HUD update ----------------
+const ORDINAL = ['1st','2nd','3rd','4th','5th','6th'];
+function updateHud(){
+  const sorted = [...riders].sort((a,b) =>
+    (a.finished && b.finished) ? a.finishTime - b.finishTime :
+    a.finished ? -1 : b.finished ? 1 : b.progress - a.progress);
+  const place = sorted.indexOf(player);
+  $('posText').textContent = ORDINAL[place];
+  $('posText').style.color = place === 0 ? '#9ff08a' : place < 3 ? '#ffd75e' : '#ff9d8a';
+  $('lapText').textContent = `LAP ${Math.min(LAPS, player.lap+1)}/${LAPS}`;
+  const mins = Math.floor(raceTime/60), secs = (raceTime%60).toFixed(1);
+  $('timeText').textContent = `${mins}:${secs.padStart(4,'0')}`;
+  $('hpBar').style.width = Math.max(0, player.hp) + '%';
+  $('stBar').style.width = Math.max(0, player.stamina) + '%';
+  for (let g=1; g<=4; g++) $('g'+g).classList.toggle('on', player.gear >= g);
+  $('gearText').textContent = player.boost > 2 ? 'BOOST!' : 'GEAR ' + player.gear;
+}
+
+// ---------------- main loop ----------------
+const clock = new THREE.Clock();
+let flagT = 0;
+function frame(){
+  requestAnimationFrame(frame);
+  tick(Math.min(0.05, clock.getDelta()));
+}
+function tick(dt){
+  if (hitPause > 0){ hitPause -= dt; renderer.render(scene, camera); return; }
+
+  flagT += dt;
+  if (window.__flags) window.__flags.forEach((f,i) => f.rotation.y = Math.sin(flagT*2 + i)*0.3);
+
+  if (state === 'countdown'){
+    countT -= dt;
+    const n = Math.ceil(countT - 0.6);
+    const cm = $('centerMsg');
+    if (countT > 0.6){
+      cm.style.display = 'block';
+      if (cm.textContent !== String(n)){ cm.textContent = n; sfx.count(false); }
+    } else if (countT > -0.4){
+      if (cm.textContent !== 'CHARGE!'){ cm.textContent = 'CHARGE!'; cm.style.color = '#9ff08a'; sfx.count(true); sfx.fanfareShort(); }
+      if (state !== 'race'){ state = 'race'; }
+    }
+    if (countT <= -0.4){ cm.style.display = 'none'; cm.style.color = '#ffd75e'; }
+  }
+
+  if (state === 'race' || state === 'results' || (state === 'countdown' && countT <= 0.6)){
+    raceTime += dt;
+    for (const r of riders) r.update(dt);
+    bodyCollisions();
+    // player gallop sfx
+    if (player.mounted && player.speed > 8 && particles.tick('clop', Math.max(0.14, 0.34 - player.speed*0.005)))
+      sfx.clop(Math.min(0.16, player.speed*0.005));
+  } else if (state === 'countdown'){
+    for (const r of riders) r.syncMesh(dt);
+  } else {
+    // title screen: slow orbit
+    const t = performance.now()*0.00012;
+    camera.position.set(Math.sin(t)*130, 46, 20 + Math.cos(t)*110);
+    camera.lookAt(0, 0, 10);
+    for (const r of riders) r.syncMesh(dt);
+    particles.update(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  particles.update(dt);
+  updateCamera(dt);
+  updateHud();
+  updateEngageTags();
+  updateLanceHud();
+  updatePopups(dt);
+  drawMinimap();
+  renderer.render(scene, camera);
+}
+frame();
+
+// ---------------- debug / capture hooks (used by the dev harness) ----------------
+window.__ft = {
+  riders, player, keys, startRace,
+  get state(){ return state; },
+  set state(v){ state = v; },
+  step(n=1, dt=1/60){ for (let i=0;i<n;i++) tick(dt); },
+};
+window.__cap = (w=960, h=540, q=0.72, steps=0) => {
+  for (let i=0;i<steps;i++) tick(1/60);
+  renderer.setSize(w, h, false);
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+  renderer.render(scene, camera);
+  const url = renderer.domElement.toDataURL('image/jpeg', q);
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  return { url, len: url.length };
+};
+</script>
+</body>
+</html>
